@@ -339,6 +339,69 @@ return {
       return folders
     end
 
+    local function ensure_jsconfig(version, project_root)
+      local jsconfig_path = project_root .. '/jsconfig.json'
+      if vim.fn.filereadable(jsconfig_path) == 1 then
+        return
+      end
+      local odoo_path = home .. '/odoo' .. version
+      local enterprise_path = home .. '/enterprise' .. version .. '.0'
+      local types_path = home .. '/docker/config/odoo' .. version .. '/node_modules'
+      if vim.fn.isdirectory(types_path) ~= 1 then
+        return
+      end
+      local rel_odoo = vim.fn.fnamemodify(odoo_path, ':~:.')
+      local rel_enterprise = vim.fn.fnamemodify(enterprise_path, ':~:.')
+      local rel_types = vim.fn.fnamemodify(types_path, ':~:.')
+      local config = {
+        compilerOptions = {
+          moduleResolution = 'node',
+          baseUrl = '.',
+          target = 'ES2022',
+          noEmit = true,
+          checkJs = true,
+          allowJs = true,
+          disableSizeLimit = true,
+          typeRoots = {
+            rel_types .. '/@types',
+            rel_types .. '/@odoo',
+            rel_odoo .. '/addons/web/static/src/@types',
+          },
+          paths = {
+            ['@odoo/owl'] = { rel_types .. '/@odoo/owl/dist/types/owl' },
+            ['@web/*'] = { rel_odoo .. '/addons/web/static/src/*' },
+            ['@web_editor/*'] = { rel_odoo .. '/addons/web_editor/static/src/*' },
+            ['@web_tour/*'] = { rel_odoo .. '/addons/web_tour/static/src/*' },
+            ['@bus/*'] = { rel_odoo .. '/addons/bus/static/src/*' },
+            ['@mail/*'] = { rel_odoo .. '/addons/mail/static/src/*' },
+            ['@website/*'] = { rel_odoo .. '/addons/website/static/src/*' },
+            ['@html_editor/*'] = { rel_odoo .. '/addons/html_editor/static/src/*' },
+            ['@point_of_sale/*'] = { rel_odoo .. '/addons/point_of_sale/static/src/*' },
+            ['@sale/*'] = { rel_odoo .. '/addons/sale/static/src/*' },
+            ['@stock/*'] = { rel_odoo .. '/addons/stock/static/src/*' },
+            ['@purchase/*'] = { rel_odoo .. '/addons/purchase/static/src/*' },
+            ['@account/*'] = { rel_odoo .. '/addons/account/static/src/*' },
+            ['@spreadsheet/*'] = { rel_odoo .. '/addons/spreadsheet/static/src/*' },
+            ['@web_enterprise/*'] = { rel_enterprise .. '/web_enterprise/static/src/*' },
+            ['@web_gantt/*'] = { rel_enterprise .. '/web_gantt/static/src/*' },
+            ['@web_grid/*'] = { rel_enterprise .. '/web_grid/static/src/*' },
+          },
+        },
+        include = {
+          '*/static/src/**/*.js',
+          rel_odoo .. '/addons/web/static/src/**/*.js',
+        },
+        exclude = { '**/lib/**' },
+      }
+      local json = vim.json.encode(config)
+      local f = io.open(jsconfig_path, 'w')
+      if f then
+        f:write(json)
+        f:close()
+        vim.notify('[odoo-ide] Generated jsconfig.json for Odoo ' .. version, vim.log.levels.INFO)
+      end
+    end
+
     local function root_dir(fname)
       local util = require 'lspconfig.util'
       local manifest = util.root_pattern '__manifest__.py'(fname)
@@ -379,6 +442,7 @@ return {
         local folders = build_odoo_folders(version, project_root)
         params.workspaceFolders = folders
         config._odoo_version = version
+        ensure_jsconfig(version, project_root)
       end,
 
       on_init = function(client, _)
