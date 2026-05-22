@@ -1009,8 +1009,7 @@ require('lazy').setup({
         -- <c-k>: Toggle signature help
         --
         -- See :h blink-cmp-config-keymap for defining your own keymap
-        preset = 'default',
-        ['<D-y>'] = { 'accept', 'fallback' },
+        preset = 'enter',
       },
 
       appearance = {
