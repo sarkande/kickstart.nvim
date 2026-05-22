@@ -92,6 +92,7 @@ vim.g.maplocalleader = ' '
 
 -- Set to true if you have a Nerd Font installed and selected in the terminal
 vim.g.have_nerd_font = false
+vim.g.lspconfig_deprecation_warnings = false
 
 -- [[ Setting options ]]
 -- See `:help vim.opt`
@@ -120,6 +121,13 @@ end)
 
 -- Enable break indent
 vim.opt.breakindent = true
+
+-- Folding via treesitter
+vim.opt.foldmethod = 'expr'
+vim.opt.foldexpr = 'v:lua.vim.treesitter.foldexpr()'
+vim.opt.foldcolumn = '0'
+vim.opt.foldlevel = 99
+vim.opt.foldlevelstart = 99
 
 -- Save undo history
 vim.opt.undofile = true
@@ -168,8 +176,6 @@ vim.opt.confirm = true
 --  See `:help hlsearch`
 vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
 
--- Diagnostic keymaps
-vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
 
 -- Exit terminal mode in the builtin terminal with a shortcut that is a bit easier
 -- for people to discover. Otherwise, you normally need to press <C-\><C-n>, which
@@ -199,6 +205,182 @@ vim.keymap.set('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper win
 -- vim.keymap.set("n", "<C-S-l>", "<C-w>L", { desc = "Move window to the right" })
 -- vim.keymap.set("n", "<C-S-j>", "<C-w>J", { desc = "Move window to the lower" })
 -- vim.keymap.set("n", "<C-S-k>", "<C-w>K", { desc = "Move window to the upper" })
+
+-- Quit all
+vim.keymap.set('n', '<leader>q', ':qa!<CR>', { desc = '[Q]uit all' })
+
+-- Auto-save on focus lost or buffer leave
+vim.api.nvim_create_autocmd({ 'FocusLost', 'BufLeave' }, {
+  pattern = '*',
+  callback = function()
+    if vim.bo.modified and vim.bo.buftype == '' and vim.fn.expand '%' ~= '' then
+      vim.cmd 'silent! write'
+    end
+  end,
+})
+
+-- Visual selection search
+vim.keymap.set('v', '<leader>f', function()
+  vim.cmd 'noau normal! "vy"'
+  local text = vim.fn.getreg 'v'
+  text = vim.fn.escape(text, '/\\')
+  vim.fn.setreg('/', '\\V' .. text)
+  vim.cmd 'normal! n'
+end, { desc = 'Search selection in buffer' })
+
+vim.keymap.set('v', '<leader>F', function()
+  vim.cmd 'noau normal! "vy"'
+  local text = vim.fn.getreg 'v'
+  require('telescope.builtin').live_grep { default_text = text }
+end, { desc = 'Search selection in workspace' })
+
+-- Copy selection + path + diagnostics for Claude
+vim.keymap.set('v', '<leader>y', function()
+  vim.cmd 'noau normal! "vy"'
+  local code = vim.fn.getreg 'v'
+  local path = vim.fn.expand '%:.'
+  local start_line = vim.fn.line "'<"
+  local end_line = vim.fn.line "'>"
+  local all_diags = vim.diagnostic.get(0)
+  local diags = vim.tbl_filter(function(d)
+    return d.lnum >= start_line - 1 and d.lnum <= end_line - 1
+  end, all_diags)
+  local parts = { path .. ':' .. start_line .. '-' .. end_line, '', '```', code, '```' }
+  if #diags > 0 then
+    table.insert(parts, '')
+    table.insert(parts, 'Diagnostics:')
+    for _, d in ipairs(diags) do
+      local sev = ({ 'ERROR', 'WARN', 'INFO', 'HINT' })[d.severity]
+      table.insert(parts, string.format('  L%d [%s] %s (%s)', d.lnum + 1, sev, d.message, d.source or ''))
+    end
+  end
+  local result = table.concat(parts, '\n')
+  vim.fn.setreg('+', result)
+  vim.notify('[Copied ' .. #diags .. ' diagnostics]', vim.log.levels.INFO)
+end, { desc = 'Copy code + path + diagnostics' })
+
+-- Diagnostic panel
+vim.keymap.set('n', '<leader>xd', vim.diagnostic.setloclist, { desc = 'Diagnostic list' })
+vim.keymap.set('n', '<leader>xx', function()
+  vim.diagnostic.setqflist()
+  vim.cmd 'copen'
+end, { desc = 'All diagnostics panel' })
+
+-- Cheatsheet
+vim.keymap.set('n', '<leader>?', function()
+  local lines = {
+    '═══════════════ Navigation ═══════════════',
+    '<C-p>        Chercher fichier (workspace)',
+    '<C-g>        Grep dans fichiers (workspace)',
+    '<leader>e    Explorateur fichier',
+    '<leader>g    Go-to definition / XPath target',
+    '2-click      Idem (double-clic)',
+    '<leader><leader>  Buffers ouverts',
+    '<leader>sf   Chercher fichier',
+    '<leader>sg   Grep dans fichiers',
+    '<leader>sw   Grep mot sous curseur',
+    '',
+    '═══════════════ Diagnostics ══════════════',
+    '<leader>xx   Panneau erreurs (projet)',
+    '<leader>xd   Erreurs fichier courant',
+    '<leader>id   Ignorer erreur (ajoute # noqa/etc)',
+    '',
+    '═══════════════ Git ══════════════════════',
+    '<leader>gh   Historique git du fichier',
+    '<leader>gl   Log git complet',
+    '<leader>gf   Historique fichier (diff côte à côte)',
+    '<leader>gd   Diff working tree',
+    '<leader>hb   Blame ligne',
+    '<leader>hp   Preview hunk',
+    '<leader>hs   Stage hunk',
+    '<leader>hr   Reset hunk',
+    '<leader>tb   Toggle blame inline',
+    '',
+    '═══════════════ Édition ══════════════════',
+    'v + <leader>f   Chercher sélection (fichier)',
+    'v + <leader>F   Chercher sélection (workspace)',
+    'v + <leader>y   Copier code + path + erreurs',
+    '<leader>id      Ignorer diagnostic',
+    '',
+    '═══════════════ Folding ══════════════════',
+    'za           Toggle fold',
+    'zR           Tout ouvrir',
+    'zM           Tout fermer',
+    '',
+    '═══════════════ Fenêtres ═════════════════',
+    '<leader>q    Quitter tout',
+    '<leader>u    Historique local (undotree)',
+    '<leader>R    Restart LSP',
+    '<leader>cl   Exécuter CodeLens',
+    '<leader>sk   Tous les keymaps (Telescope)',
+    'v / s        Split vertical/horizontal (neo-tree)',
+  }
+  vim.api.nvim_open_win(vim.api.nvim_create_buf(false, true), true, {
+    relative = 'editor',
+    width = 50,
+    height = #lines,
+    col = math.floor((vim.o.columns - 50) / 2),
+    row = math.floor((vim.o.lines - #lines) / 2),
+    style = 'minimal',
+    border = 'rounded',
+    title = ' Raccourcis ',
+    title_pos = 'center',
+  })
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+  vim.bo.modifiable = false
+  vim.keymap.set('n', 'q', '<cmd>close<CR>', { buffer = true })
+  vim.keymap.set('n', '<Esc>', '<cmd>close<CR>', { buffer = true })
+end, { desc = 'Cheatsheet raccourcis' })
+
+-- Ignore diagnostic on current line
+vim.keymap.set('n', '<leader>id', function()
+  local lnum = vim.api.nvim_win_get_cursor(0)[1] - 1
+  local diags = vim.diagnostic.get(0, { lnum = lnum })
+  if #diags == 0 then
+    vim.notify('No diagnostics on this line', vim.log.levels.INFO)
+    return
+  end
+  local noqa = {}
+  local pylint = {}
+  local pyright = {}
+  for _, d in ipairs(diags) do
+    local src = (d.source or ''):lower()
+    local code = d.code and tostring(d.code) or nil
+    if not code then
+      goto continue
+    end
+    if src:find 'flake8' then
+      noqa[code] = true
+    elseif src:find 'pylint' then
+      pylint[code] = true
+    elseif src:find 'pyright' or src:find 'basedpyright' then
+      pyright[code] = true
+    end
+    ::continue::
+  end
+  local suffixes = {}
+  if next(noqa) then
+    table.insert(suffixes, '# noqa: ' .. table.concat(vim.tbl_keys(noqa), ', '))
+  end
+  if next(pylint) then
+    table.insert(suffixes, '# pylint: disable=' .. table.concat(vim.tbl_keys(pylint), ', '))
+  end
+  if next(pyright) then
+    table.insert(suffixes, '# type: ignore[' .. table.concat(vim.tbl_keys(pyright), ', ') .. ']')
+  end
+  if #suffixes == 0 then
+    return
+  end
+  local line = vim.api.nvim_buf_get_lines(0, lnum, lnum + 1, false)[1]
+  local comment = '  ' .. table.concat(suffixes, '  ')
+  vim.api.nvim_buf_set_lines(0, lnum, lnum + 1, false, { line .. comment })
+  vim.cmd 'silent! write'
+end, { desc = '[I]gnore [D]iagnostic' })
+
+vim.keymap.set('n', '<leader>R', function()
+  vim.cmd 'LspRestart odoo_ide'
+  vim.notify 'LSP restarted'
+end, { desc = '[R]estart LSP' })
 
 -- [[ Basic Autocommands ]]
 --  See `:help lua-guide-autocommands`
@@ -428,6 +610,10 @@ require('lazy').setup({
       vim.keymap.set('n', '<leader>sr', builtin.resume, { desc = '[S]earch [R]esume' })
       vim.keymap.set('n', '<leader>s.', builtin.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
       vim.keymap.set('n', '<leader><leader>', builtin.buffers, { desc = '[ ] Find existing buffers' })
+      vim.keymap.set('n', '<C-p>', builtin.find_files, { desc = 'Find files' })
+      vim.keymap.set('n', '<C-g>', builtin.live_grep, { desc = 'Search in files' })
+      vim.keymap.set('n', '<leader>gh', builtin.git_bcommits, { desc = '[G]it file [H]istory' })
+      vim.keymap.set('n', '<leader>gl', builtin.git_commits, { desc = '[G]it [L]og' })
 
       -- Slightly advanced example of overriding default behavior and theme
       vim.keymap.set('n', '<leader>/', function()
@@ -545,7 +731,12 @@ require('lazy').setup({
           -- Jump to the definition of the word under your cursor.
           --  This is where a variable was first declared, or where a function is defined, etc.
           --  To jump back, press <C-t>.
-          map('grd', require('telescope.builtin').lsp_definitions, '[G]oto [D]efinition')
+          map('<leader>g', function()
+            require('telescope.builtin').lsp_definitions { jump_type = 'never' }
+          end, '[G]oto Definition')
+          map('grd', function()
+            require('telescope.builtin').lsp_definitions { jump_type = 'never' }
+          end, '[G]oto [D]efinition')
 
           -- WARN: This is not Goto Definition, this is Goto Declaration.
           --  For example, in C this would take you to the header.
@@ -623,27 +814,18 @@ require('lazy').setup({
       vim.diagnostic.config {
         severity_sort = true,
         float = { border = 'rounded', source = 'if_many' },
-        underline = { severity = vim.diagnostic.severity.ERROR },
-        signs = vim.g.have_nerd_font and {
+        underline = true,
+        signs = {
           text = {
-            [vim.diagnostic.severity.ERROR] = '󰅚 ',
-            [vim.diagnostic.severity.WARN] = '󰀪 ',
-            [vim.diagnostic.severity.INFO] = '󰋽 ',
-            [vim.diagnostic.severity.HINT] = '󰌶 ',
+            [vim.diagnostic.severity.ERROR] = '●',
+            [vim.diagnostic.severity.WARN] = '●',
+            [vim.diagnostic.severity.INFO] = '●',
+            [vim.diagnostic.severity.HINT] = '●',
           },
-        } or {},
+        },
         virtual_text = {
-          source = 'if_many',
           spacing = 2,
-          format = function(diagnostic)
-            local diagnostic_message = {
-              [vim.diagnostic.severity.ERROR] = diagnostic.message,
-              [vim.diagnostic.severity.WARN] = diagnostic.message,
-              [vim.diagnostic.severity.INFO] = diagnostic.message,
-              [vim.diagnostic.severity.HINT] = diagnostic.message,
-            }
-            return diagnostic_message[diagnostic.severity]
-          end,
+          prefix = '■',
         },
       }
 
@@ -666,14 +848,14 @@ require('lazy').setup({
         -- clangd = {},
         -- gopls = {},
         -- pyright = {},
-        -- rust_analyzer = {},
+        rust_analyzer = {},
         -- ... etc. See `:help lspconfig-all` for a list of all the pre-configured LSPs
         --
         -- Some languages (like typescript) have entire language plugins that can be useful:
         --    https://github.com/pmizio/typescript-tools.nvim
         --
         -- But for many setups, the LSP (`ts_ls`) will work just fine
-        -- ts_ls = {},
+        ts_ls = {},
         --
 
         lua_ls = {
@@ -828,9 +1010,7 @@ require('lazy').setup({
         --
         -- See :h blink-cmp-config-keymap for defining your own keymap
         preset = 'default',
-
-        -- For more advanced Luasnip keymaps (e.g. selecting choice nodes, expansion) see:
-        --    https://github.com/L3MON4D3/LuaSnip?tab=readme-ov-file#keymaps
+        ['<D-y>'] = { 'accept', 'fallback' },
       },
 
       appearance = {
@@ -842,7 +1022,7 @@ require('lazy').setup({
       completion = {
         -- By default, you may press `<c-space>` to show the documentation.
         -- Optionally, set `auto_show = true` to show the documentation after a delay.
-        documentation = { auto_show = false, auto_show_delay_ms = 500 },
+        documentation = { auto_show = true, auto_show_delay_ms = 200 },
       },
 
       sources = {
@@ -873,20 +1053,16 @@ require('lazy').setup({
     -- change the command in the config to whatever the name of that colorscheme is.
     --
     -- If you want to see what colorschemes are already installed, you can use `:Telescope colorscheme`.
-    'folke/tokyonight.nvim',
-    priority = 1000, -- Make sure to load this before all the other start plugins.
+    'Shatur/neovim-ayu',
+    priority = 1000,
     config = function()
-      ---@diagnostic disable-next-line: missing-fields
-      require('tokyonight').setup {
-        styles = {
-          comments = { italic = false }, -- Disable italics in comments
+      require('ayu').setup {
+        mirage = false,
+        overrides = {
+          LspCodeLens = { fg = '#FF8F40', bold = true },
         },
       }
-
-      -- Load the colorscheme here.
-      -- Like many other themes, this one has different styles, and you could load
-      -- any other, such as 'tokyonight-storm', 'tokyonight-moon', or 'tokyonight-day'.
-      vim.cmd.colorscheme 'tokyonight-night'
+      vim.cmd.colorscheme 'ayu-light'
     end,
   },
 
@@ -936,7 +1112,7 @@ require('lazy').setup({
     main = 'nvim-treesitter.configs', -- Sets main module to use for opts
     -- [[ Configure Treesitter ]] See `:help nvim-treesitter`
     opts = {
-      ensure_installed = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' },
+      ensure_installed = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'rust', 'toml', 'vim', 'vimdoc' },
       -- Autoinstall languages that are not installed
       auto_install = true,
       highlight = {
@@ -969,14 +1145,14 @@ require('lazy').setup({
   -- require 'kickstart.plugins.indent_line',
   -- require 'kickstart.plugins.lint',
   -- require 'kickstart.plugins.autopairs',
-  -- require 'kickstart.plugins.neo-tree',
-  -- require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
+  require 'kickstart.plugins.neo-tree',
+  require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
 
   -- NOTE: The import below can automatically add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --    This is the easiest way to modularize your config.
   --
   --  Uncomment the following line and add your plugins to `lua/custom/plugins/*.lua` to get going.
-  -- { import = 'custom.plugins' },
+  { import = 'custom.plugins' },
   --
   -- For additional information with loading, sourcing and examples see `:help lazy.nvim-🔌-plugin-spec`
   -- Or use telescope!
