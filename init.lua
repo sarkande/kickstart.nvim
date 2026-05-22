@@ -1219,14 +1219,10 @@ require('lazy').setup({
     'nvim-treesitter/nvim-treesitter',
     build = ':TSUpdate',
     config = function()
-      require('nvim-treesitter').setup()
-      local ensure = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'rust', 'toml', 'vim', 'vimdoc', 'python', 'javascript', 'xml' }
-      local installed = require('nvim-treesitter').installed()
-      for _, lang in ipairs(ensure) do
-        if not vim.tbl_contains(installed, lang) then
-          vim.cmd('TSInstall ' .. lang)
-        end
-      end
+      require('nvim-treesitter').setup({
+        ensure_installed = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'rust', 'toml', 'vim', 'vimdoc', 'python', 'javascript', 'xml' },
+        auto_install = true,
+      })
     end,
     -- There are additional nvim-treesitter modules that you can use to interact
     -- with nvim-treesitter. You should go explore a few and see what interests you:
