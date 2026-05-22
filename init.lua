@@ -209,6 +209,43 @@ vim.keymap.set('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper win
 -- Quit all
 vim.keymap.set('n', '<leader>q', ':qa!<CR>', { desc = '[Q]uit all' })
 
+-- Copy file path to clipboard
+vim.keymap.set('n', '<leader>cp', function()
+  local path = vim.fn.expand '%:p'
+  vim.fn.setreg('+', path)
+  vim.notify('Copied: ' .. path)
+end, { desc = '[C]opy file [P]ath' })
+
+-- CMD key mappings (Kitty sends CSI u → Neovim decodes as <D-key>)
+vim.keymap.set({ 'n', 'i', 'v' }, '<D-s>', '<cmd>w<CR>', { desc = 'Save' })
+vim.keymap.set({ 'n', 'i', 'v' }, '<D-p>', function()
+  require('telescope.builtin').find_files()
+end, { desc = 'Find files' })
+vim.keymap.set({ 'n', 'i', 'v' }, '<D-f>', function()
+  require('telescope.builtin').current_buffer_fuzzy_find(require('telescope.themes').get_dropdown {
+    winblend = 10,
+    previewer = false,
+  })
+end, { desc = 'Search in buffer' })
+vim.keymap.set({ 'n', 'i', 'v' }, '<D-g>', function()
+  require('telescope.builtin').live_grep()
+end, { desc = 'Grep in files' })
+vim.keymap.set({ 'n', 'i', 'v' }, '<D-b>', function()
+  require('telescope.builtin').buffers()
+end, { desc = 'Buffers' })
+vim.keymap.set({ 'n', 'i', 'v' }, '<D-S-f>', function()
+  require('telescope.builtin').live_grep()
+end, { desc = 'Grep in project' })
+vim.keymap.set({ 'n', 'i', 'v' }, '<D-e>', function()
+  if vim.bo.filetype == 'oil' then
+    vim.cmd('Neotree toggle dir=' .. vim.fn.getcwd())
+  else
+    vim.cmd 'Neotree reveal'
+  end
+end, { desc = 'File explorer' })
+vim.keymap.set({ 'n', 'i', 'v' }, '<D-z>', '<cmd>undo<CR>', { desc = 'Undo' })
+vim.keymap.set({ 'n', 'i', 'v' }, '<D-S-z>', '<cmd>redo<CR>', { desc = 'Redo' })
+
 -- Auto-save on focus lost or buffer leave
 vim.api.nvim_create_autocmd({ 'FocusLost', 'BufLeave' }, {
   pattern = '*',
@@ -279,6 +316,7 @@ vim.keymap.set('n', '<leader>?', function()
     '<leader>sf   Chercher fichier',
     '<leader>sg   Grep dans fichiers',
     '<leader>sw   Grep mot sous curseur',
+    '<leader>cp   Copier chemin du fichier',
     '',
     '═══════════════ Diagnostics ══════════════',
     '<leader>xx   Panneau erreurs (projet)',
@@ -286,6 +324,13 @@ vim.keymap.set('n', '<leader>?', function()
     '<leader>id   Ignorer erreur (ajoute # noqa/etc)',
     '',
     '═══════════════ Git ══════════════════════',
+    '<leader>gs   Git status (diff modal)',
+    '  -          Stage/unstage fichier',
+    '  S          Stage all',
+    '  cc         Commit',
+    '  ca         Amend',
+    '  cp         Commit & push',
+    '  q          Fermer',
     '<leader>gh   Historique git du fichier',
     '<leader>gl   Log git complet',
     '<leader>gf   Historique fichier (diff côte à côte)',
@@ -306,6 +351,17 @@ vim.keymap.set('n', '<leader>?', function()
     'za           Toggle fold',
     'zR           Tout ouvrir',
     'zM           Tout fermer',
+    '',
+    '═══════════════ CMD (Kitty) ══════════════',
+    'CMD+S        Sauvegarder',
+    'CMD+P        Chercher fichier',
+    'CMD+F        Chercher dans buffer',
+    'CMD+G        Grep dans fichiers',
+    'CMD+B        Buffers',
+    'CMD+E        Explorateur fichier',
+    'CMD+Shift+F  Grep dans projet',
+    'CMD+Z        Undo',
+    'CMD+Shift+Z  Redo',
     '',
     '═══════════════ Fenêtres ═════════════════',
     '<leader>q    Quitter tout',
@@ -829,6 +885,12 @@ require('lazy').setup({
         },
       }
 
+      vim.api.nvim_create_autocmd('CursorHold', {
+        callback = function()
+          vim.diagnostic.open_float(nil, { focusable = false, scope = 'cursor' })
+        end,
+      })
+
       -- LSP servers and clients are able to communicate to each other what features they support.
       --  By default, Neovim doesn't support everything that is in the LSP specification.
       --  When you add blink.cmp, luasnip, etc. Neovim now has *more* capabilities.
@@ -1086,20 +1148,68 @@ require('lazy').setup({
       -- - sr)'  - [S]urround [R]eplace [)] [']
       require('mini.surround').setup()
 
-      -- Simple and easy statusline.
-      --  You could remove this setup call if you don't like it,
-      --  and try some other statusline plugin
-      local statusline = require 'mini.statusline'
-      -- set use_icons to true if you have a Nerd Font
-      statusline.setup { use_icons = vim.g.have_nerd_font }
-
-      -- You can configure sections in the statusline by overriding their
-      -- default behavior. For example, here we set the section for
-      -- cursor location to LINE:COLUMN
-      ---@diagnostic disable-next-line: duplicate-set-field
-      statusline.section_location = function()
-        return '%2l:%-2v'
+      local git_status = ''
+      local git_timer = nil
+      local function refresh_git_status()
+        if git_timer then
+          git_timer:stop()
+        end
+        git_timer = vim.defer_fn(function()
+          vim.system({ 'git', 'status', '--porcelain' }, { text = true }, function(obj)
+            vim.schedule(function()
+              if obj.code ~= 0 then
+                git_status = ''
+                return
+              end
+              local staged, modified, untracked = 0, 0, 0
+              for line in obj.stdout:gmatch '[^\n]+' do
+                local x, y = line:sub(1, 1), line:sub(2, 2)
+                if x == '?' then
+                  untracked = untracked + 1
+                else
+                  if x ~= ' ' then staged = staged + 1 end
+                  if y ~= ' ' then modified = modified + 1 end
+                end
+              end
+              local parts = {}
+              if staged > 0 then table.insert(parts, staged .. ' staged') end
+              if modified > 0 then table.insert(parts, modified .. ' modified') end
+              if untracked > 0 then table.insert(parts, untracked .. ' new') end
+              git_status = #parts > 0 and table.concat(parts, ' · ') or ''
+              vim.cmd 'redrawstatus'
+            end)
+          end)
+        end, 200)
       end
+
+      vim.api.nvim_create_autocmd({ 'BufWritePost', 'FocusGained', 'VimEnter', 'TermLeave' }, {
+        callback = refresh_git_status,
+      })
+      refresh_git_status()
+
+      local statusline = require 'mini.statusline'
+      statusline.setup {
+        use_icons = vim.g.have_nerd_font,
+        content = {
+          active = function()
+            local mode, mode_hl = MiniStatusline.section_mode { trunc_width = 120 }
+            local git = MiniStatusline.section_git { trunc_width = 40 }
+            local diagnostics = MiniStatusline.section_diagnostics { trunc_width = 75 }
+            local filename = MiniStatusline.section_filename { trunc_width = 140 }
+            local search = MiniStatusline.section_searchcount { trunc_width = 75 }
+
+            return MiniStatusline.combine_groups {
+              { hl = mode_hl, strings = { mode } },
+              { hl = 'MiniStatuslineDevinfo', strings = { git, diagnostics } },
+              '%<',
+              { hl = 'MiniStatuslineFilename', strings = { filename } },
+              '%=',
+              { hl = 'DiagnosticWarn', strings = { git_status } },
+              { hl = mode_hl, strings = { search, '%2l:%-2v' } },
+            }
+          end,
+        },
+      }
 
       -- ... and there is more!
       --  Check out: https://github.com/echasnovski/mini.nvim
@@ -1108,21 +1218,16 @@ require('lazy').setup({
   { -- Highlight, edit, and navigate code
     'nvim-treesitter/nvim-treesitter',
     build = ':TSUpdate',
-    main = 'nvim-treesitter.configs', -- Sets main module to use for opts
-    -- [[ Configure Treesitter ]] See `:help nvim-treesitter`
-    opts = {
-      ensure_installed = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'rust', 'toml', 'vim', 'vimdoc' },
-      -- Autoinstall languages that are not installed
-      auto_install = true,
-      highlight = {
-        enable = true,
-        -- Some languages depend on vim's regex highlighting system (such as Ruby) for indent rules.
-        --  If you are experiencing weird indenting issues, add the language to
-        --  the list of additional_vim_regex_highlighting and disabled languages for indent.
-        additional_vim_regex_highlighting = { 'ruby' },
-      },
-      indent = { enable = true, disable = { 'ruby' } },
-    },
+    config = function()
+      require('nvim-treesitter').setup()
+      local ensure = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'rust', 'toml', 'vim', 'vimdoc', 'python', 'javascript', 'xml' }
+      local installed = require('nvim-treesitter').installed()
+      for _, lang in ipairs(ensure) do
+        if not vim.tbl_contains(installed, lang) then
+          vim.cmd('TSInstall ' .. lang)
+        end
+      end
+    end,
     -- There are additional nvim-treesitter modules that you can use to interact
     -- with nvim-treesitter. You should go explore a few and see what interests you:
     --
