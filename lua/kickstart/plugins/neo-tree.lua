@@ -8,8 +8,20 @@ return {
   },
   cmd = 'Neotree',
   keys = {
-    { '\\', ':Neotree reveal<CR>', desc = 'NeoTree reveal', silent = true },
-    { '<leader>e', ':Neotree reveal<CR>', desc = 'File [E]xplorer', silent = true },
+    { '\\', function()
+      if vim.bo.filetype == 'oil' then
+        vim.cmd('Neotree toggle dir=' .. vim.fn.getcwd())
+      else
+        vim.cmd 'Neotree reveal'
+      end
+    end, desc = 'NeoTree reveal', silent = true },
+    { '<leader>e', function()
+      if vim.bo.filetype == 'oil' then
+        vim.cmd('Neotree toggle dir=' .. vim.fn.getcwd())
+      else
+        vim.cmd 'Neotree reveal'
+      end
+    end, desc = 'File [E]xplorer', silent = true },
   },
   opts = {
     enable_diagnostics = true,

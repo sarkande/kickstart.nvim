@@ -209,6 +209,22 @@ vim.keymap.set('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper win
 -- Quit all
 vim.keymap.set('n', '<leader>q', ':qa!<CR>', { desc = '[Q]uit all' })
 
+-- Shift+Tab : decrease indent
+vim.keymap.set('i', '<S-Tab>', '<C-d>', { desc = 'Decrease indent' })
+vim.keymap.set('n', '<S-Tab>', '<<', { desc = 'Decrease indent' })
+vim.keymap.set('v', '<S-Tab>', '<gv', { desc = 'Decrease indent' })
+
+-- XML : 2 spaces, override vim-sleuth
+vim.api.nvim_create_autocmd('FileType', {
+  pattern = 'xml',
+  callback = function()
+    vim.opt_local.shiftwidth = 2
+    vim.opt_local.tabstop = 2
+    vim.opt_local.softtabstop = 2
+    vim.opt_local.expandtab = true
+  end,
+})
+
 -- Copy file path to clipboard
 vim.keymap.set('n', '<leader>cp', function()
   local path = vim.fn.expand '%:p'
@@ -234,7 +250,41 @@ vim.keymap.set({ 'n', 'i', 'v' }, '<D-b>', function()
   require('telescope.builtin').buffers()
 end, { desc = 'Buffers' })
 vim.keymap.set({ 'n', 'i', 'v' }, '<D-S-f>', function()
-  require('telescope.builtin').live_grep()
+  local home = vim.fn.expand '~'
+  local cwd = vim.fn.getcwd()
+  local search_dirs = nil
+  -- detect odoo version from Dockerfile up the tree
+  local dir = cwd
+  local version = nil
+  while dir and dir ~= '/' and dir ~= home do
+    local f = io.open(dir .. '/Dockerfile', 'r')
+    if f then
+      for line in f:lines() do
+        version = line:match 'FROM%s+odoo:(%d+)%.%d+'
+        if version then break end
+      end
+      f:close()
+    end
+    if version then break end
+    dir = vim.fn.fnamemodify(dir, ':h')
+  end
+  if version then
+    search_dirs = { cwd }
+    local odoo = home .. '/odoo' .. version
+    if vim.fn.isdirectory(odoo) == 1 then table.insert(search_dirs, odoo) end
+    local ent = home .. '/enterprise' .. version .. '.0'
+    if vim.fn.isdirectory(ent) == 1 then table.insert(search_dirs, ent) end
+  end
+  local extra_args = {}
+  local rgignore = cwd .. '/.rgignore'
+  if vim.fn.filereadable(rgignore) == 1 then
+    table.insert(extra_args, '--ignore-file')
+    table.insert(extra_args, rgignore)
+  end
+  require('telescope').extensions.live_grep_args.live_grep_args {
+    search_dirs = search_dirs,
+    additional_args = #extra_args > 0 and function() return extra_args end or nil,
+  }
 end, { desc = 'Grep in project' })
 vim.keymap.set({ 'n', 'i', 'v' }, '<D-e>', function()
   if vim.bo.filetype == 'oil' then
@@ -607,6 +657,7 @@ require('lazy').setup({
         end,
       },
       { 'nvim-telescope/telescope-ui-select.nvim' },
+      { 'nvim-telescope/telescope-live-grep-args.nvim' },
 
       -- Useful for getting pretty icons, but requires a Nerd Font.
       { 'nvim-tree/nvim-web-devicons', enabled = vim.g.have_nerd_font },
@@ -653,6 +704,7 @@ require('lazy').setup({
       -- Enable Telescope extensions if they are installed
       pcall(require('telescope').load_extension, 'fzf')
       pcall(require('telescope').load_extension, 'ui-select')
+      pcall(require('telescope').load_extension, 'live_grep_args')
 
       -- See `:help telescope.builtin`
       local builtin = require 'telescope.builtin'
@@ -1244,6 +1296,49 @@ require('lazy').setup({
   -- require 'kickstart.plugins.debug',
   -- require 'kickstart.plugins.indent_line',
   -- require 'kickstart.plugins.lint',
+
+  {
+    'HiPhish/rainbow-delimiters.nvim',
+    config = function()
+      local rainbow = require 'rainbow-delimiters'
+      require('rainbow-delimiters.setup').setup {
+        strategy = { [''] = rainbow.strategy['global'] },
+        query = { [''] = 'rainbow-delimiters', lua = 'rainbow-blocks' },
+        highlight = {
+          'RainbowDelimiterRed',
+          'RainbowDelimiterYellow',
+          'RainbowDelimiterBlue',
+          'RainbowDelimiterOrange',
+          'RainbowDelimiterGreen',
+          'RainbowDelimiterViolet',
+          'RainbowDelimiterCyan',
+        },
+      }
+    end,
+  },
+  {
+    'lukas-reineke/indent-blankline.nvim',
+    main = 'ibl',
+    config = function()
+      local hooks = require 'ibl.hooks'
+      hooks.register(hooks.type.HIGHLIGHT_SETUP, function()
+        vim.api.nvim_set_hl(0, 'IblIndent1', { fg = '#E06C75' })
+        vim.api.nvim_set_hl(0, 'IblIndent2', { fg = '#E5C07B' })
+        vim.api.nvim_set_hl(0, 'IblIndent3', { fg = '#61AFEF' })
+        vim.api.nvim_set_hl(0, 'IblIndent4', { fg = '#D19A66' })
+        vim.api.nvim_set_hl(0, 'IblIndent5', { fg = '#98C379' })
+        vim.api.nvim_set_hl(0, 'IblIndent6', { fg = '#C678DD' })
+        vim.api.nvim_set_hl(0, 'IblIndent7', { fg = '#56B6C2' })
+      end)
+      require('ibl').setup {
+        indent = {
+          highlight = { 'IblIndent1', 'IblIndent2', 'IblIndent3', 'IblIndent4', 'IblIndent5', 'IblIndent6', 'IblIndent7' },
+          char = '│',
+        },
+        scope = { enabled = false },
+      }
+    end,
+  },
   -- require 'kickstart.plugins.autopairs',
   require 'kickstart.plugins.neo-tree',
   require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps

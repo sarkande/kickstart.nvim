@@ -448,6 +448,46 @@ return {
       on_init = function(client, _)
         local version = client.config._odoo_version
         if version then
+          local project_root = client.config.root_dir
+          if project_root then
+            local odoo_src = home .. '/odoo' .. version
+            local enterprise_src = home .. '/enterprise' .. version .. '.0'
+
+            local function ensure_symlink(target, name)
+              local link = project_root .. '/' .. name
+              if not vim.uv.fs_lstat(link) and vim.fn.isdirectory(target) == 1 then
+                vim.uv.fs_symlink(target, link)
+              end
+            end
+
+            ensure_symlink(odoo_src, 'odoo')
+            ensure_symlink(enterprise_src, 'enterprise')
+
+            local function ensure_gitignore(entry)
+              local gitignore = project_root .. '/.gitignore'
+              local content = ''
+              local f = io.open(gitignore, 'r')
+              if f then
+                content = f:read '*a'
+                f:close()
+              end
+              if content:find(entry, 1, true) then
+                return
+              end
+              f = io.open(gitignore, 'a')
+              if f then
+                if content ~= '' and not content:match '\n$' then
+                  f:write '\n'
+                end
+                f:write(entry .. '\n')
+                f:close()
+              end
+            end
+
+            ensure_gitignore '/odoo'
+            ensure_gitignore '/enterprise'
+          end
+
           local folders = client.workspace_folders or {}
           vim.notify('[odoo-ide] Odoo ' .. version .. '.0 | ' .. #folders .. ' workspace folders', vim.log.levels.INFO)
         end
@@ -640,17 +680,44 @@ return {
 
         -- Workspace-wide search (Ctrl+P / Ctrl+G)
         local workspace_dirs = {}
-        local folders = client.workspace_folders or {}
-        for _, wf in ipairs(folders) do
-          table.insert(workspace_dirs, vim.uri_to_fname(wf.uri))
+        local _root = client.config.root_dir
+        local _ver = client.config._odoo_version
+        if _root then
+          table.insert(workspace_dirs, _root)
+        end
+        if _ver then
+          local _odoo = home .. '/odoo' .. _ver
+          if vim.fn.isdirectory(_odoo) == 1 then
+            table.insert(workspace_dirs, _odoo)
+          end
+          local _ent = home .. '/enterprise' .. _ver .. '.0'
+          if vim.fn.isdirectory(_ent) == 1 then
+            table.insert(workspace_dirs, _ent)
+          end
         end
         if #workspace_dirs > 0 then
+          local function rgignore_args()
+            local root = client.config.root_dir
+            if root and vim.fn.filereadable(root .. '/.rgignore') == 1 then
+              return { '--ignore-file', root .. '/.rgignore' }
+            end
+            return {}
+          end
           vim.keymap.set('n', '<C-p>', function()
-            require('telescope.builtin').find_files { search_dirs = workspace_dirs }
+            require('telescope.builtin').find_files { search_dirs = workspace_dirs, follow = true }
           end, { buffer = bufnr, desc = 'Find files (Odoo workspace)' })
           vim.keymap.set('n', '<C-g>', function()
-            require('telescope.builtin').live_grep { search_dirs = workspace_dirs }
+            require('telescope').extensions.live_grep_args.live_grep_args { search_dirs = workspace_dirs, additional_args = rgignore_args }
           end, { buffer = bufnr, desc = 'Search in files (Odoo workspace)' })
+          vim.keymap.set({ 'n', 'i', 'v' }, '<D-p>', function()
+            require('telescope.builtin').find_files { search_dirs = workspace_dirs, follow = true }
+          end, { buffer = bufnr, desc = 'Find files (Odoo workspace)' })
+          vim.keymap.set({ 'n', 'i', 'v' }, '<D-g>', function()
+            require('telescope').extensions.live_grep_args.live_grep_args { search_dirs = workspace_dirs, additional_args = rgignore_args }
+          end, { buffer = bufnr, desc = 'Search in files (Odoo workspace)' })
+          vim.keymap.set({ 'n', 'i', 'v' }, '<D-S-f>', function()
+            require('telescope').extensions.live_grep_args.live_grep_args { search_dirs = workspace_dirs, additional_args = rgignore_args }
+          end, { buffer = bufnr, desc = 'Grep in project (Odoo workspace)' })
         end
 
         -- XPath validation
