@@ -8,25 +8,16 @@ return {
   },
   cmd = 'Neotree',
   keys = {
-    { '\\', function()
-      if vim.bo.filetype == 'oil' then
-        vim.cmd('Neotree toggle dir=' .. vim.fn.getcwd())
-      else
-        vim.cmd 'Neotree reveal'
-      end
-    end, desc = 'NeoTree reveal', silent = true },
-    { '<leader>e', function()
-      if vim.bo.filetype == 'oil' then
-        vim.cmd('Neotree toggle dir=' .. vim.fn.getcwd())
-      else
-        vim.cmd 'Neotree reveal'
-      end
-    end, desc = 'File [E]xplorer', silent = true },
+    { '\\', '<cmd>Neotree reveal<cr>', desc = 'NeoTree reveal', silent = true },
+    { '<leader>e', '<cmd>Neotree reveal<cr>', desc = 'File [E]xplorer', silent = true },
   },
   opts = {
     enable_diagnostics = true,
     use_popups_for_input = false,
     filesystem = {
+      -- Ouvrir un dossier (`nvim .`, ouverture d'un répertoire) → neo-tree
+      -- prend la main à la place de netrw (l'explorateur par défaut de vim).
+      hijack_netrw_behavior = 'open_current',
       filtered_items = {
         hide_dotfiles = false,
         hide_by_name = { '__pycache__', '.git' },
@@ -37,6 +28,11 @@ return {
         position = 'right',
         width = 45,
         mappings = {
+          -- neo-tree mappe <space> sur toggle_node par défaut ; comme <space>
+          -- est notre leader, ça se déclenchait quand la séquence leader expirait
+          -- (timeoutlen) → ouverture intempestive du nœud. On le neutralise pour
+          -- que l'espace ne soit QUE la leader. (Enter / o ouvrent toujours.)
+          ['<space>'] = 'none',
           ['\\'] = 'close_window',
           ['<leader>e'] = 'close_window',
           ['/'] = 'fuzzy_finder',

@@ -91,7 +91,7 @@ vim.g.mapleader = ' '
 vim.g.maplocalleader = ' '
 
 -- Set to true if you have a Nerd Font installed and selected in the terminal
-vim.g.have_nerd_font = false
+vim.g.have_nerd_font = true
 vim.g.lspconfig_deprecation_warnings = false
 
 -- [[ Setting options ]]
@@ -103,7 +103,39 @@ vim.g.lspconfig_deprecation_warnings = false
 vim.opt.number = true
 -- You can also add relative line numbers, to help with jumping.
 --  Experiment for yourself to see if you like it!
--- vim.opt.relativenumber = true
+vim.opt.relativenumber = true
+
+-- En mode hybride, Neovim aligne le numéro absolu de la ligne courante à GAUCHE
+-- (créant un « retrait »), alors que les relatifs sont à droite. On reconstruit
+-- la colonne pour tout aligner à droite : signes, puis numéro (absolu si ligne
+-- courante, relatif sinon). La ligne courante passe via le groupe CursorLineNr
+-- (gras) au lieu de LineNr.
+-- Statuscolumn custom : numéro aligné à droite, ligne courante via CursorLineNr
+-- (orange + gras). On passe par une fonction Lua et non une expression, car un
+-- 'statuscolumn' NON VIDE s'affiche TOUJOURS — même quand `number` est off. La
+-- fonction renvoie donc une colonne VIDE dans les buffers spéciaux (neo-tree,
+-- dashboard, aide…) pour ne pas y faire apparaître de numéros parasites.
+local statuscolumn_skip = {
+  ['neo-tree'] = true,
+  alpha = true,
+  help = true,
+  undotree = true,
+  lazy = true,
+  mason = true,
+  qf = true,
+  TelescopePrompt = true,
+}
+function _G.__nvim_statuscolumn()
+  local win = vim.g.statusline_winid
+  local buf = (win and win ~= 0) and vim.api.nvim_win_get_buf(win) or vim.api.nvim_get_current_buf()
+  if statuscolumn_skip[vim.bo[buf].filetype] then
+    return ''
+  end
+  local num = vim.v.relnum == 0 and vim.v.lnum or vim.v.relnum
+  local hl = vim.v.relnum == 0 and 'CursorLineNr' or 'LineNr'
+  return '%s%=%#' .. hl .. '#' .. num .. ' '
+end
+vim.opt.statuscolumn = '%{%v:lua.__nvim_statuscolumn()%}'
 
 -- Enable mouse mode, can be useful for resizing splits for example!
 vim.opt.mouse = 'a'
@@ -219,10 +251,14 @@ vim.keymap.set('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper win
 -- Quit all
 vim.keymap.set('n', '<leader>q', ':qa!<CR>', { desc = '[Q]uit all' })
 
--- Shift+Tab : decrease indent
+-- Tab / Shift+Tab : indenter / désindenter
 vim.keymap.set('i', '<S-Tab>', '<C-d>', { desc = 'Decrease indent' })
 vim.keymap.set('n', '<S-Tab>', '<<', { desc = 'Decrease indent' })
 vim.keymap.set('v', '<S-Tab>', '<gv', { desc = 'Decrease indent' })
+-- En normal, Tab indente (on n'utilise pas <C-i>/jumplist-avant) ; en visuel
+-- Tab indente en gardant la sélection — pendants de <S-Tab>.
+vim.keymap.set('n', '<Tab>', '>>', { desc = 'Increase indent' })
+vim.keymap.set('v', '<Tab>', '>gv', { desc = 'Increase indent' })
 
 
 -- Copy file path to clipboard
@@ -286,15 +322,21 @@ vim.keymap.set({ 'n', 'i', 'v' }, '<D-S-f>', function()
     additional_args = #extra_args > 0 and function() return extra_args end or nil,
   }
 end, { desc = 'Grep in project' })
-vim.keymap.set({ 'n', 'i', 'v' }, '<D-e>', function()
-  if vim.bo.filetype == 'oil' then
-    vim.cmd('Neotree toggle dir=' .. vim.fn.getcwd())
-  else
-    vim.cmd 'Neotree reveal'
-  end
-end, { desc = 'File explorer' })
+vim.keymap.set({ 'n', 'i', 'v' }, '<D-e>', '<cmd>Neotree reveal<CR>', { desc = 'File explorer' })
+-- Dupliquer la ligne courante / la sélection (Cmd+D, comme VSCode)
+vim.keymap.set('n', '<D-d>', '<cmd>copy .<CR>', { desc = 'Duplicate line' })
+vim.keymap.set('x', '<D-d>', ":copy '><CR>", { desc = 'Duplicate selection' })
+
 vim.keymap.set({ 'n', 'i', 'v' }, '<D-z>', '<cmd>undo<CR>', { desc = 'Undo' })
 vim.keymap.set({ 'n', 'i', 'v' }, '<D-S-z>', '<cmd>redo<CR>', { desc = 'Redo' })
+
+-- Déplacer la/les ligne(s) (Cmd+Down / Cmd+Up, comme VSCode)
+vim.keymap.set('n', '<D-Down>', '<cmd>m .+1<CR>==', { desc = 'Move line down' })
+vim.keymap.set('n', '<D-Up>', '<cmd>m .-2<CR>==', { desc = 'Move line up' })
+vim.keymap.set('i', '<D-Down>', '<Esc><cmd>m .+1<CR>==gi', { desc = 'Move line down' })
+vim.keymap.set('i', '<D-Up>', '<Esc><cmd>m .-2<CR>==gi', { desc = 'Move line up' })
+vim.keymap.set('v', '<D-Down>', ":m '>+1<CR>gv=gv", { desc = 'Move selection down' })
+vim.keymap.set('v', '<D-Up>', ":m '<-2<CR>gv=gv", { desc = 'Move selection up' })
 
 -- Auto-save on focus lost or buffer leave
 vim.api.nvim_create_autocmd({ 'FocusLost', 'BufLeave' }, {
@@ -1226,6 +1268,11 @@ require('lazy').setup({
         mirage = false,
         overrides = {
           LspCodeLens = { fg = '#FF8F40', bold = true },
+          -- Numéros de ligne (lignes non courantes) : ayu-light les rend trop
+          -- pâles. On contraste sans concurrencer le texte.
+          LineNr = { fg = '#8A9199' },
+          -- Ligne courante : gras + accent orange ayu (appliqué via statuscolumn).
+          CursorLineNr = { fg = '#FA8D3E', bold = true },
         },
       }
       vim.cmd.colorscheme 'ayu-light'
