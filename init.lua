@@ -119,6 +119,12 @@ vim.schedule(function()
   vim.opt.clipboard = 'unnamedplus'
 end)
 
+-- Indentation defaults (vim-sleuth overrides per file when it can detect)
+vim.opt.tabstop = 4
+vim.opt.shiftwidth = 4
+vim.opt.softtabstop = 4
+vim.opt.expandtab = true
+
 -- Enable break indent
 vim.opt.breakindent = true
 
@@ -131,6 +137,10 @@ vim.opt.foldlevelstart = 99
 
 -- Save undo history
 vim.opt.undofile = true
+
+-- Command-line autocompletion
+vim.opt.wildmenu = true
+vim.opt.wildmode = 'longest:full,full'
 
 -- Case-insensitive searching UNLESS \C or one or more capital letters in the search term
 vim.opt.ignorecase = true
@@ -214,16 +224,6 @@ vim.keymap.set('i', '<S-Tab>', '<C-d>', { desc = 'Decrease indent' })
 vim.keymap.set('n', '<S-Tab>', '<<', { desc = 'Decrease indent' })
 vim.keymap.set('v', '<S-Tab>', '<gv', { desc = 'Decrease indent' })
 
--- XML : 2 spaces, override vim-sleuth
-vim.api.nvim_create_autocmd('FileType', {
-  pattern = 'xml',
-  callback = function()
-    vim.opt_local.shiftwidth = 2
-    vim.opt_local.tabstop = 2
-    vim.opt_local.softtabstop = 2
-    vim.opt_local.expandtab = true
-  end,
-})
 
 -- Copy file path to clipboard
 vim.keymap.set('n', '<leader>cp', function()
@@ -714,6 +714,59 @@ require('lazy').setup({
       vim.keymap.set('n', '<leader>ss', builtin.builtin, { desc = '[S]earch [S]elect Telescope' })
       vim.keymap.set('n', '<leader>sw', builtin.grep_string, { desc = '[S]earch current [W]ord' })
       vim.keymap.set('n', '<leader>sg', builtin.live_grep, { desc = '[S]earch by [G]rep' })
+      local function detect_odoo_dirs()
+        local home = vim.fn.expand '~'
+        local cwd = vim.fn.getcwd()
+        local dir = cwd
+        local version = nil
+        while dir and dir ~= '/' and dir ~= home do
+          local f = io.open(dir .. '/Dockerfile', 'r')
+          if f then
+            for line in f:lines() do
+              version = line:match 'FROM%s+odoo:(%d+)%.%d+'
+              if version then break end
+            end
+            f:close()
+          end
+          if version then break end
+          dir = vim.fn.fnamemodify(dir, ':h')
+        end
+        local odoo_dirs = {}
+        if version then
+          local odoo = home .. '/odoo' .. version
+          if vim.fn.isdirectory(odoo) == 1 then table.insert(odoo_dirs, odoo) end
+          local ent = home .. '/enterprise' .. version .. '.0'
+          if vim.fn.isdirectory(ent) == 1 then table.insert(odoo_dirs, ent) end
+        end
+        return cwd, odoo_dirs
+      end
+
+      local find_files_exclude = { '--ignore-glob=*.po', '--ignore-glob=*.pot', '--ignore-glob=*/test*' }
+
+      -- Cmd+Shift+P : fichiers locaux uniquement, sans po/pot/tests
+      vim.keymap.set({ 'n', 'i', 'v' }, '<D-S-p>', function()
+        local cwd, _ = detect_odoo_dirs()
+        builtin.find_files {
+          cwd = cwd,
+          follow = true,
+          find_command = { 'rg', '--files', '--follow', '--glob=!*.po', '--glob=!*.pot', '--glob=!*/test*' },
+          prompt_title = 'Fichiers locaux',
+        }
+      end, { desc = 'Find local files (Cmd+Shift+P)' })
+
+      -- Cmd+Alt+P : fichiers dans local + odoo + enterprise
+      vim.keymap.set({ 'n', 'i', 'v' }, '<D-A-p>', function()
+        local cwd, odoo_dirs = detect_odoo_dirs()
+        local search_dirs = { cwd }
+        for _, d in ipairs(odoo_dirs) do table.insert(search_dirs, d) end
+        builtin.find_files {
+          search_dirs = search_dirs,
+          follow = true,
+          find_command = { 'rg', '--files', '--follow', '--glob=!*.po', '--glob=!*.pot', '--glob=!*/test*' },
+          prompt_title = 'Fichiers (local + odoo + enterprise)',
+          path_display = { 'smart' },
+        }
+      end, { desc = 'Find files all sources (Cmd+Alt+P)' })
       vim.keymap.set('n', '<leader>sd', builtin.diagnostics, { desc = '[S]earch [D]iagnostics' })
       vim.keymap.set('n', '<leader>sr', builtin.resume, { desc = '[S]earch [R]esume' })
       vim.keymap.set('n', '<leader>s.', builtin.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })

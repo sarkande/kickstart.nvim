@@ -43,8 +43,42 @@ return {
           ['f'] = 'filter_on_submit',
           ['v'] = 'open_vsplit',
           ['s'] = 'open_split',
+          ['P'] = { 'toggle_preview', config = { use_float = false, use_image_nvim = true } },
         },
       },
     },
+    preview = {
+      use_float = false,
+      use_image_nvim = true,
+    },
   },
+  config = function(_, opts)
+    require('neo-tree').setup(opts)
+
+    -- Auto-preview on cursor move in neo-tree
+    vim.api.nvim_create_autocmd('FileType', {
+      pattern = 'neo-tree',
+      callback = function(ev)
+        -- Ouvrir la preview automatiquement
+        vim.defer_fn(function()
+          vim.cmd 'Neotree action=focus'
+          local ok = pcall(function()
+            require('neo-tree.command').execute { action = 'show', source = 'filesystem' }
+          end)
+        end, 50)
+
+        -- Mettre à jour la preview au mouvement du curseur
+        vim.api.nvim_create_autocmd('CursorMoved', {
+          buffer = ev.buf,
+          callback = function()
+            local state = require('neo-tree.sources.manager').get_state 'filesystem'
+            if state and state.preview_mode then
+              require('neo-tree.sources.common.preview').hide()
+              require('neo-tree.sources.common.preview').show(state)
+            end
+          end,
+        })
+      end,
+    })
+  end,
 }
