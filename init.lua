@@ -94,6 +94,10 @@ vim.g.maplocalleader = ' '
 vim.g.have_nerd_font = true
 vim.g.lspconfig_deprecation_warnings = false
 
+-- NvChad UI : emplacement du cache des highlights compilés par base46.
+-- Doit être défini AVANT le chargement des plugins.
+vim.g.base46_cache = vim.fn.stdpath 'data' .. '/base46_cache/'
+
 -- [[ Setting options ]]
 -- See `:help vim.opt`
 -- NOTE: You can change these options as you wish!
@@ -190,6 +194,10 @@ vim.opt.timeoutlen = 300
 -- Configure how new splits should be opened
 vim.opt.splitright = true
 vim.opt.splitbelow = true
+
+-- Cmdline masquée quand inutile → la statusline descend tout en bas (plus de
+-- ligne vide). La cmdline réapparaît dès que tu tapes `:` ou une recherche.
+vim.opt.cmdheight = 0
 
 -- Sets how neovim will display certain whitespace characters in the editor.
 --  See `:help 'list'`
@@ -322,7 +330,28 @@ vim.keymap.set({ 'n', 'i', 'v' }, '<D-S-f>', function()
     additional_args = #extra_args > 0 and function() return extra_args end or nil,
   }
 end, { desc = 'Grep in project' })
-vim.keymap.set({ 'n', 'i', 'v' }, '<D-e>', '<cmd>Neotree reveal<CR>', { desc = 'File explorer' })
+-- Toggle 3 états de l'explorateur (neo-tree) :
+--  fermé              → ouvre + révèle le fichier courant + focus
+--  ouvert, pas focus  → donne le focus à l'arbre (pratique pour « revenir »)
+--  ouvert + focus     → ferme
+function _G.NeoTreeToggle()
+  local tree_win
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    local buf = vim.api.nvim_win_get_buf(win)
+    if vim.bo[buf].filetype == 'neo-tree' then
+      tree_win = win
+      break
+    end
+  end
+  if not tree_win then
+    vim.cmd 'Neotree reveal'
+  elseif vim.api.nvim_get_current_win() == tree_win then
+    vim.cmd 'Neotree close'
+  else
+    vim.api.nvim_set_current_win(tree_win)
+  end
+end
+vim.keymap.set({ 'n', 'i', 'v' }, '<D-e>', '<cmd>lua NeoTreeToggle()<CR>', { desc = 'File explorer (toggle)' })
 -- Dupliquer la ligne courante / la sélection (Cmd+D, comme VSCode)
 vim.keymap.set('n', '<D-d>', '<cmd>copy .<CR>', { desc = 'Duplicate line' })
 vim.keymap.set('x', '<D-d>', ":copy '><CR>", { desc = 'Duplicate selection' })
@@ -395,7 +424,10 @@ vim.keymap.set('n', '<leader>xx', function()
   vim.cmd 'copen'
 end, { desc = 'All diagnostics panel' })
 
--- Cheatsheet
+-- Cheatsheet : NvCheatsheet (NvChad) = grille VISUELLE auto-générée de TOUS les
+-- mappings (toujours à jour, contrairement à la liste manuelle ci-dessous).
+vim.keymap.set('n', '<leader>?', '<cmd>NvCheatsheet<CR>', { desc = 'Cheatsheet (grille visuelle)' })
+--[[ Ancienne cheatsheet manuelle, désactivée (gardée pour mémoire) :
 vim.keymap.set('n', '<leader>?', function()
   local lines = {
     '═══════════════ Navigation ═══════════════',
@@ -479,6 +511,7 @@ vim.keymap.set('n', '<leader>?', function()
   vim.keymap.set('n', 'q', '<cmd>close<CR>', { buffer = true })
   vim.keymap.set('n', '<Esc>', '<cmd>close<CR>', { buffer = true })
 end, { desc = 'Cheatsheet raccourcis' })
+--]]
 
 -- Ignore diagnostic on current line
 vim.keymap.set('n', '<leader>id', function()
@@ -726,16 +759,32 @@ require('lazy').setup({
 
       -- [[ Configure Telescope ]]
       -- See `:help telescope` and `:help telescope.setup()`
+      local t_actions = require 'telescope.actions'
       require('telescope').setup {
-        -- You can put your default mappings / updates / etc. in here
-        --  All the info you're looking for is in `:help telescope.setup()`
-        --
-        -- defaults = {
-        --   mappings = {
-        --     i = { ['<c-enter>'] = 'to_fuzzy_refine' },
-        --   },
-        -- },
-        -- pickers = {}
+        defaults = {
+          mappings = {
+            -- Insert mode : les défauts Telescope (rappel explicite).
+            i = {
+              ['<C-v>'] = t_actions.select_vertical, -- split vertical (side panel)
+              ['<C-x>'] = t_actions.select_horizontal, -- split horizontal
+              ['<C-t>'] = t_actions.select_tab, -- nouvel onglet
+            },
+            -- Normal mode (<Esc> dans le picker) : mêmes touches que neo-tree.
+            n = {
+              ['v'] = t_actions.select_vertical,
+              ['s'] = t_actions.select_horizontal,
+              ['t'] = t_actions.select_tab,
+            },
+          },
+        },
+        pickers = {
+          -- Rappel des splits inscrit dans le titre du prompt → toujours visible,
+          -- aucune touche à presser pour le dévoiler.
+          find_files = { prompt_title = 'Fichiers   <C-v> vsplit · <C-x> split · <C-t> onglet' },
+          live_grep = { prompt_title = 'Grep   <C-v> vsplit · <C-x> split · <C-t> onglet' },
+          buffers = { prompt_title = 'Buffers   <C-v> vsplit · <C-x> split · <C-t> onglet' },
+          current_buffer_fuzzy_find = { prompt_title = 'Recherche buffer   <C-v> vsplit · <C-x> split' },
+        },
         extensions = {
           ['ui-select'] = {
             require('telescope.themes').get_dropdown(),
@@ -1275,7 +1324,10 @@ require('lazy').setup({
           CursorLineNr = { fg = '#FA8D3E', bold = true },
         },
       }
-      vim.cmd.colorscheme 'ayu-light'
+      -- Désactivé : base46 (NvChad) pilote désormais le thème. ayu-light sera
+      -- reporté comme thème base46 custom (étape 2). Pour revenir à ayu pur,
+      -- décommenter et retirer le bloc nvchad-ui.
+      -- vim.cmd.colorscheme 'ayu-light'
     end,
   },
 
@@ -1300,6 +1352,10 @@ require('lazy').setup({
       -- - sr)'  - [S]urround [R]eplace [)] [']
       require('mini.surround').setup()
 
+      -- mini.statusline DÉSACTIVÉE : la statusline est désormais celle de NvChad
+      -- (cf chadrc M.ui.statusline, avec le module Odoo). Deux statuslines se
+      -- battaient sinon. On garde mini.ai / mini.surround ci-dessus.
+      --[[ Ancienne mini.statusline + suivi git_status (désactivé) :
       local git_status = ''
       local git_timer = nil
       local function refresh_git_status()
@@ -1362,6 +1418,7 @@ require('lazy').setup({
           end,
         },
       }
+      --]]
 
       -- ... and there is more!
       --  Check out: https://github.com/echasnovski/mini.nvim
@@ -1474,6 +1531,15 @@ require('lazy').setup({
     },
   },
 })
+
+-- Charger les highlights compilés par base46 (NvChad). Le cache est généré au
+-- build du plugin et régénéré à chaque changement de thème. Garde-fou : on ne
+-- charge que si le dossier existe (sinon premier boot avant `:Lazy sync`).
+if vim.g.base46_cache and vim.fn.isdirectory(vim.g.base46_cache) == 1 then
+  for _, file in ipairs(vim.fn.readdir(vim.g.base46_cache)) do
+    pcall(dofile, vim.g.base46_cache .. file)
+  end
+end
 
 -- The line beneath this is called `modeline`. See `:help modeline`
 -- vim: ts=2 sts=2 sw=2 et

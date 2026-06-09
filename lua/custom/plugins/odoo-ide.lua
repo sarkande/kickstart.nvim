@@ -489,7 +489,10 @@ return {
           end
 
           local folders = client.workspace_folders or {}
-          vim.notify('[odoo-ide] Odoo ' .. version .. '.0 | ' .. #folders .. ' workspace folders', vim.log.levels.INFO)
+          -- Exposé pour la statusline NvChad (module "odoo"), au lieu d'un notify
+          -- qui squatte la ligne de commande en permanence.
+          vim.g.odoo_version = version
+          vim.g.odoo_workspace_folders = #folders
         end
         return false
       end,

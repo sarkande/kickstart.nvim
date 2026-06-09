@@ -8,8 +8,8 @@ return {
   },
   cmd = 'Neotree',
   keys = {
-    { '\\', '<cmd>Neotree reveal<cr>', desc = 'NeoTree reveal', silent = true },
-    { '<leader>e', '<cmd>Neotree reveal<cr>', desc = 'File [E]xplorer', silent = true },
+    { '\\', '<cmd>lua NeoTreeToggle()<cr>', desc = 'NeoTree toggle', silent = true },
+    { '<leader>e', '<cmd>lua NeoTreeToggle()<cr>', desc = 'File [E]xplorer (toggle)', silent = true },
   },
   opts = {
     enable_diagnostics = true,
